@@ -28,10 +28,13 @@ export default function LinksExplorer({ categories, initialFilters }) {
   const [qInput, setQInput] = useState(initialFilters.q);
   const [links, setLinks] = useState([]);
   const [hasMore, setHasMore] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(true); // 최초 1회 로딩(빈 화면)에만 사용
+  const [searching, setSearching] = useState(false); // 검색/필터 변경 시 배경 로딩 표시용
   const [loadingMore, setLoadingMore] = useState(false);
   const sentinelRef = useRef(null);
   const debounceRef = useRef(null);
+  const abortRef = useRef(null);
+  const isFirstLoadRef = useRef(true);
 
   // 검색어 입력은 300ms 디바운스 후 실제 필터에 반영한다.
   useEffect(() => {
@@ -42,30 +45,42 @@ export default function LinksExplorer({ categories, initialFilters }) {
   }, [qInput]);
 
   // 필터가 바뀔 때마다 첫 페이지부터 새로 불러온다. URL도 새로고침 없이 갱신한다.
+  // 최초 로딩이 아니면 기존 목록을 화면에 그대로 둔 채 작은 로딩 표시만 띄운다
+  // (검색어를 바꿀 때마다 목록이 통째로 사라졌다 다시 뜨면 훨씬 느리게 느껴짐).
   useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
+    const controller = new AbortController();
+    const previous = abortRef.current;
+    abortRef.current = controller;
+    previous?.abort();
 
-    fetch(`/api/links?${buildQuery(filters, 0).toString()}`)
+    if (isFirstLoadRef.current) {
+      setLoading(true);
+    } else {
+      setSearching(true);
+    }
+
+    fetch(`/api/links?${buildQuery(filters, 0).toString()}`, { signal: controller.signal })
       .then((res) => res.json())
       .then((data) => {
-        if (cancelled) return;
+        if (abortRef.current !== controller) return; // 더 최신 요청에 의해 대체됨
         setLinks(data.links ?? []);
         setHasMore(Boolean(data.hasMore));
       })
-      .catch((err) => console.error("[dashboard] 링크 조회 실패", err))
+      .catch((err) => {
+        if (err.name === "AbortError") return;
+        console.error("[dashboard] 링크 조회 실패", err);
+      })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (abortRef.current !== controller) return;
+        setLoading(false);
+        setSearching(false);
+        isFirstLoadRef.current = false;
       });
 
     const params = buildQuery(filters, 0);
     params.delete("offset");
     const query = params.toString();
     window.history.replaceState(null, "", query ? `?${query}` : window.location.pathname);
-
-    return () => {
-      cancelled = true;
-    };
   }, [filters]);
 
   const loadMore = useCallback(() => {
@@ -126,8 +141,14 @@ export default function LinksExplorer({ categories, initialFilters }) {
   return (
     <section className="mt-8">
       <div className="flex items-center justify-between">
-        <h2 className="font-semibold text-neutral-900">
+        <h2 className="flex items-center gap-2 font-semibold text-neutral-900">
           {filters.view === "archived" ? "보관함" : "저장한 링크"}
+          {searching && (
+            <span
+              aria-label="검색 중"
+              className="h-3 w-3 animate-spin rounded-full border-2 border-neutral-300 border-t-neutral-500"
+            />
+          )}
         </h2>
         <button
           type="button"
