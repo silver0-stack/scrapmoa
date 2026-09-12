@@ -55,6 +55,44 @@ function extractSourceDomain(rawUrl) {
   }
 }
 
+// "모으기만 하고 안 읽는다"는 문제를 조금이라도 줄여보려고, 링크를 저장할 때마다
+// (즉 사용자가 어차피 챗봇을 열어본 시점에) 밀린 안 읽은 개수를 슬쩍 알려준다.
+async function countUnreadLinks(supabase, botIdentityId) {
+  const { count, error } = await supabase
+    .from("links")
+    .select("id", { count: "exact", head: true })
+    .eq("bot_identity_id", botIdentityId)
+    .eq("is_read", false)
+    .eq("is_archived", false);
+
+  if (error) {
+    console.error("[kakao-webhook] 안 읽은 링크 개수 조회 실패", error);
+    return null;
+  }
+
+  return count;
+}
+
+// 오래된(created_at 기준 가장 먼저 쌓인) 순서로 미리보기용 제목 몇 개를 가져온다.
+// 방금 막 저장한 링크는 created_at이 가장 최근이라 자연히 여기 안 걸린다.
+async function getUnreadPreview(supabase, botIdentityId, limit) {
+  const { data, error } = await supabase
+    .from("links")
+    .select("title, raw_url, source_domain")
+    .eq("bot_identity_id", botIdentityId)
+    .eq("is_read", false)
+    .eq("is_archived", false)
+    .order("created_at", { ascending: true })
+    .limit(limit);
+
+  if (error) {
+    console.error("[kakao-webhook] 안 읽은 링크 미리보기 조회 실패", error);
+    return [];
+  }
+
+  return data ?? [];
+}
+
 async function findOrCreateBotIdentity(supabase, botUserKey) {
   const { data: existing, error: selectError } = await supabase
     .from("bot_identities")
@@ -228,9 +266,29 @@ export async function POST(request) {
     // 백그라운드 작업이 중간에 끊길 수 있다. 반드시 waitUntil로 감싼다.
     waitUntil(processLinks(insertedLinks));
 
+    const unreadCount = await countUnreadLinks(supabase, botIdentity.id);
+    let description = "잠시 후 요약이 완성돼요.";
+    // 방금 저장한 것 말고도 밀린 게 있을 때만 리마인드한다 (안 그러면 매번 "1개 있어요"처럼 뻔한 소리가 됨).
+    if (unreadCount && unreadCount > urls.length) {
+      const PREVIEW_LIMIT = 2;
+      const preview = await getUnreadPreview(supabase, botIdentity.id, PREVIEW_LIMIT);
+      const previewLines = preview
+        .map((link) => `· ${link.title || link.source_domain || link.raw_url}`)
+        .join("\n");
+      const remaining = unreadCount - preview.length;
+
+      description += `\n\n안 읽은 링크가 ${unreadCount}개 있어요.`;
+      if (previewLines) {
+        description += `\n${previewLines}`;
+      }
+      if (remaining > 0) {
+        description += `\n...외 ${remaining}개`;
+      }
+    }
+
     return dashboardCardResponse({
       title: urls.length === 1 ? "저장했어요!" : `링크 ${urls.length}개를 저장했어요!`,
-      description: "잠시 후 요약이 완성돼요.",
+      description,
       dashboardUrl,
     });
   } catch (error) {
