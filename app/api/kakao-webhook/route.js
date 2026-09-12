@@ -20,6 +20,32 @@ function simpleTextResponse(text) {
   });
 }
 
+// 저장/연동 성공처럼 대시보드로 이어지는 응답은 텍스트만 던지지 않고
+// 버튼이 있는 카드(textCard)로 보여준다. 이 시점엔 아직 크롤링 전이라
+// 썸네일/제목이 없으므로 이미지가 필요 없는 textCard를 쓴다.
+function dashboardCardResponse({ title, description, dashboardUrl }) {
+  return NextResponse.json({
+    version: "2.0",
+    template: {
+      outputs: [
+        {
+          textCard: {
+            title,
+            description,
+            buttons: [
+              {
+                action: "webLink",
+                label: "대시보드에서 보기",
+                webLinkUrl: dashboardUrl,
+              },
+            ],
+          },
+        },
+      ],
+    },
+  });
+}
+
 function extractSourceDomain(rawUrl) {
   try {
     return new URL(rawUrl).hostname;
@@ -117,8 +143,17 @@ async function redeemLinkCode(supabase, botUserKey, code) {
   return { success: true };
 }
 
+// 이 URL은 공개되어 있어 아무나 호출할 수 있으므로, 오픈빌더 스킬의 "헤더값" 설정에
+// 이 값을 넣어 요청 출처를 검증한다 (없으면 누구나 가짜 요청으로 DB를 오염시킬 수 있음).
+const SKILL_SECRET_HEADER = "x-scrapmoa-skill-secret";
+
 export async function POST(request) {
   try {
+    if (request.headers.get(SKILL_SECRET_HEADER) !== process.env.KAKAO_SKILL_SECRET) {
+      console.error("[kakao-webhook] 스킬 시크릿 검증 실패");
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     let body;
     try {
       body = await request.json();
@@ -137,15 +172,18 @@ export async function POST(request) {
 
     const supabase = createAdminClient();
     const trimmedUtterance = utterance.trim();
+    const dashboardUrl = `${new URL(request.url).origin}/dashboard`;
 
     // 대시보드 연동 코드(6자리 숫자) 입력 흐름: URL 저장 흐름보다 먼저 체크한다.
     if (LINK_CODE_REGEX.test(trimmedUtterance)) {
       try {
         const result = await redeemLinkCode(supabase, botUserKey, trimmedUtterance);
         if (result.success) {
-          return simpleTextResponse(
-            "연동됐어요! 로그인 전에 저장한 링크도 대시보드에서 확인할 수 있어요."
-          );
+          return dashboardCardResponse({
+            title: "연동됐어요!",
+            description: "로그인 전에 저장한 링크도 대시보드에서 확인할 수 있어요.",
+            dashboardUrl,
+          });
         }
         return simpleTextResponse(
           "코드가 올바르지 않거나 만료됐어요. 대시보드에서 새 코드를 발급받아주세요."
@@ -160,7 +198,7 @@ export async function POST(request) {
 
     if (urls.length === 0) {
       return simpleTextResponse(
-        "저장할 링크를 찾지 못했어요. http:// 로 시작하는 주소를 포함해서 다시 보내주세요."
+        "저장할 링크를 찾지 못했어요. http:// 또는 https:// 로 시작하는 주소를 포함해서 다시 보내주세요."
       );
     }
 
@@ -190,12 +228,11 @@ export async function POST(request) {
     // 백그라운드 작업이 중간에 끊길 수 있다. 반드시 waitUntil로 감싼다.
     waitUntil(processLinks(insertedLinks));
 
-    const message =
-      urls.length === 1
-        ? "저장했어요!"
-        : `링크 ${urls.length}개를 저장했어요!`;
-
-    return simpleTextResponse(message);
+    return dashboardCardResponse({
+      title: urls.length === 1 ? "저장했어요!" : `링크 ${urls.length}개를 저장했어요!`,
+      description: "잠시 후 요약이 완성돼요.",
+      dashboardUrl,
+    });
   } catch (error) {
     // 예상 못한 오류도 카카오 오픈빌더 규격(200 + simpleText)으로 응답해야
     // 스킬 서버가 실패로 처리하지 않고, 유저에게는 스택트레이스가 노출되지 않는다.
