@@ -33,7 +33,10 @@ export default async function DashboardPage({ searchParams }) {
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-10">
-      <h1 className="text-xl font-bold text-neutral-900">대시보드</h1>
+      <div className="flex items-center gap-2">
+        <img src="/logo.svg" alt="" className="h-7 w-7 rounded-lg" />
+        <h1 className="text-xl font-bold text-neutral-900">스크랩모아</h1>
+      </div>
 
       <div className="mt-3 flex items-center gap-2">
         {profileImageUrl ? (

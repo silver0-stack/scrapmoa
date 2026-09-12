@@ -23,7 +23,8 @@ export default function LoginPage() {
   return (
     <main className="flex min-h-screen flex-col items-center justify-center gap-6 bg-neutral-50 px-4">
       <div className="text-center">
-        <h1 className="text-2xl font-bold text-neutral-900">카톡 스크랩</h1>
+        <img src="/logo.svg" alt="" className="mx-auto h-14 w-14 rounded-2xl" />
+        <h1 className="mt-3 text-2xl font-bold text-neutral-900">스크랩모아</h1>
         <p className="mt-2 text-sm text-neutral-500">
           카카오톡으로 저장한 링크를 대시보드에서 모아보세요.
         </p>
