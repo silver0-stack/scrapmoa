@@ -291,11 +291,25 @@ export async function POST(request) {
     let saveDescription = "잠시 후 요약이 완성돼요.";
     let carousel = null;
 
-    // 방금 저장한 것 말고도 밀린 게 있을 때만 리마인드한다 (안 그러면 매번 "1개 있어요"처럼 뻔한 소리가 됨).
-    const unreadCount = await countUnreadLinks(supabase, botIdentity.id);
-    if (unreadCount && unreadCount > urls.length) {
-      const PREVIEW_LIMIT = 5;
-      const preview = await getUnreadPreview(supabase, botIdentity.id, PREVIEW_LIMIT);
+    // 안읽음 리마인드는 "있으면 좋은" 부가 기능이라, 카카오의 5초 응답 제한을
+    // 절대 넘기면 안 된다. DB가 느려지는 경우(오늘 실제로 한 번 있었음)에 대비해
+    // 짧은 타임아웃을 걸고, 시간 안에 안 끝나면 그냥 리마인드 없이 응답한다.
+    const REMINDER_TIMEOUT_MS = 1500;
+    const reminder = await Promise.race([
+      (async () => {
+        const unreadCount = await countUnreadLinks(supabase, botIdentity.id);
+        if (!unreadCount || unreadCount <= urls.length) return null;
+        const preview = await getUnreadPreview(supabase, botIdentity.id, 5);
+        return { unreadCount, preview };
+      })(),
+      new Promise((resolve) => setTimeout(() => resolve(null), REMINDER_TIMEOUT_MS)),
+    ]).catch((error) => {
+      console.error("[kakao-webhook] 안읽음 리마인드 조회 실패(무시하고 진행)", error);
+      return null;
+    });
+
+    if (reminder) {
+      const { unreadCount, preview } = reminder;
       carousel = unreadCarouselOutput(preview);
 
       if (carousel) {
