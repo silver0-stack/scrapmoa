@@ -47,7 +47,7 @@ export default function LinkCard({ link, onToggleRead, onToggleArchive, onDelete
           href={displayUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="line-clamp-2 font-medium text-neutral-900 hover:underline"
+          className="line-clamp-2 break-all font-medium text-neutral-900 hover:underline"
         >
           {displayTitle}
         </a>

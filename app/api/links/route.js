@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
-const PAGE_SIZE = 12;
-
 export async function GET(request) {
   const supabase = await createClient();
   const {
@@ -14,12 +12,12 @@ export async function GET(request) {
   }
 
   const { searchParams } = new URL(request.url);
-  const q = (searchParams.get("q") ?? "").trim().toLowerCase();
   const category = searchParams.get("category") || "all";
   const status = searchParams.get("status") || "all";
   const view = searchParams.get("view") === "archived" ? "archived" : "active";
-  const offset = Number(searchParams.get("offset") ?? 0) || 0;
 
+  // 키워드 검색은 서버 왕복 없이 클라이언트에서 즉시 처리하므로, 여기서는
+  // 카테고리/상태/보관여부로만 걸러서 전부(개인 북마크 규모) 내려준다.
   let query = supabase
     .from("links")
     .select(
@@ -41,18 +39,5 @@ export async function GET(request) {
     return NextResponse.json({ error: "조회에 실패했어요." }, { status: 500 });
   }
 
-  // 키워드 검색은 PostgREST .or() 필터의 특수문자 이스케이프 이슈를 피하려고
-  // 여기서 직접 필터링한다 (개인 북마크 규모라 성능 문제 없음).
-  const filtered = q
-    ? (data ?? []).filter((link) =>
-        [link.title, link.summary, link.raw_url]
-          .filter(Boolean)
-          .some((field) => field.toLowerCase().includes(q))
-      )
-    : data ?? [];
-
-  const page = filtered.slice(offset, offset + PAGE_SIZE);
-  const hasMore = offset + PAGE_SIZE < filtered.length;
-
-  return NextResponse.json({ links: page, hasMore });
+  return NextResponse.json({ links: data ?? [] });
 }
