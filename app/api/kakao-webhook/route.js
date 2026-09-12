@@ -20,30 +20,46 @@ function simpleTextResponse(text) {
   });
 }
 
+function buildResponse(outputs) {
+  return NextResponse.json({ version: "2.0", template: { outputs } });
+}
+
 // 저장/연동 성공처럼 대시보드로 이어지는 응답은 텍스트만 던지지 않고
 // 버튼이 있는 카드(textCard)로 보여준다. 이 시점엔 아직 크롤링 전이라
 // 썸네일/제목이 없으므로 이미지가 필요 없는 textCard를 쓴다.
-function dashboardCardResponse({ title, description, dashboardUrl }) {
-  return NextResponse.json({
-    version: "2.0",
-    template: {
-      outputs: [
-        {
-          textCard: {
-            title,
-            description,
-            buttons: [
-              {
-                action: "webLink",
-                label: "대시보드에서 보기",
-                webLinkUrl: dashboardUrl,
-              },
-            ],
-          },
-        },
+function textCardOutput({ title, description, dashboardUrl }) {
+  return {
+    textCard: {
+      title,
+      description,
+      buttons: [
+        { action: "webLink", label: "대시보드에서 보기", webLinkUrl: dashboardUrl },
       ],
     },
-  });
+  };
+}
+
+// 안 읽은 링크 중 썸네일이 있는(=이미 처리 완료된) 것만 사진과 함께 캐러셀로 보여준다.
+// 링크를 누르면 대시보드가 아니라 원문으로 바로 이동해서 실제로 "읽으러" 가게 만든다.
+function unreadCarouselOutput(preview) {
+  const items = preview
+    .filter((link) => link.thumbnail_url)
+    .map((link) => ({
+      title: link.title || link.source_domain || link.raw_url,
+      description: link.summary ? link.summary.split("\n")[0] : undefined,
+      thumbnail: { imageUrl: link.thumbnail_url },
+      buttons: [
+        {
+          action: "webLink",
+          label: "읽으러 가기",
+          webLinkUrl: link.resolved_url || link.raw_url,
+        },
+      ],
+    }));
+
+  if (items.length === 0) return null;
+
+  return { carousel: { type: "basicCard", items } };
 }
 
 function extractSourceDomain(rawUrl) {
@@ -78,7 +94,7 @@ async function countUnreadLinks(supabase, botIdentityId) {
 async function getUnreadPreview(supabase, botIdentityId, limit) {
   const { data, error } = await supabase
     .from("links")
-    .select("title, raw_url, source_domain")
+    .select("title, raw_url, resolved_url, source_domain, summary, thumbnail_url")
     .eq("bot_identity_id", botIdentityId)
     .eq("is_read", false)
     .eq("is_archived", false)
@@ -217,11 +233,13 @@ export async function POST(request) {
       try {
         const result = await redeemLinkCode(supabase, botUserKey, trimmedUtterance);
         if (result.success) {
-          return dashboardCardResponse({
-            title: "연동됐어요!",
-            description: "로그인 전에 저장한 링크도 대시보드에서 확인할 수 있어요.",
-            dashboardUrl,
-          });
+          return buildResponse([
+            textCardOutput({
+              title: "연동됐어요!",
+              description: "로그인 전에 저장한 링크도 대시보드에서 확인할 수 있어요.",
+              dashboardUrl,
+            }),
+          ]);
         }
         return simpleTextResponse(
           "코드가 올바르지 않거나 만료됐어요. 대시보드에서 새 코드를 발급받아주세요."
@@ -266,31 +284,38 @@ export async function POST(request) {
     // 백그라운드 작업이 중간에 끊길 수 있다. 반드시 waitUntil로 감싼다.
     waitUntil(processLinks(insertedLinks));
 
-    const unreadCount = await countUnreadLinks(supabase, botIdentity.id);
-    let description = "잠시 후 요약이 완성돼요.";
-    // 방금 저장한 것 말고도 밀린 게 있을 때만 리마인드한다 (안 그러면 매번 "1개 있어요"처럼 뻔한 소리가 됨).
-    if (unreadCount && unreadCount > urls.length) {
-      const PREVIEW_LIMIT = 2;
-      const preview = await getUnreadPreview(supabase, botIdentity.id, PREVIEW_LIMIT);
-      const previewLines = preview
-        .map((link) => `· ${link.title || link.source_domain || link.raw_url}`)
-        .join("\n");
-      const remaining = unreadCount - preview.length;
+    const saveTitle = urls.length === 1 ? "저장했어요!" : `링크 ${urls.length}개를 저장했어요!`;
+    let saveDescription = "잠시 후 요약이 완성돼요.";
+    let carousel = null;
 
-      description += `\n\n안 읽은 링크가 ${unreadCount}개 있어요.`;
-      if (previewLines) {
-        description += `\n${previewLines}`;
-      }
-      if (remaining > 0) {
-        description += `\n...외 ${remaining}개`;
+    // 방금 저장한 것 말고도 밀린 게 있을 때만 리마인드한다 (안 그러면 매번 "1개 있어요"처럼 뻔한 소리가 됨).
+    const unreadCount = await countUnreadLinks(supabase, botIdentity.id);
+    if (unreadCount && unreadCount > urls.length) {
+      const PREVIEW_LIMIT = 5;
+      const preview = await getUnreadPreview(supabase, botIdentity.id, PREVIEW_LIMIT);
+      carousel = unreadCarouselOutput(preview);
+
+      if (carousel) {
+        // 캐러셀로 사진과 함께 보여줄 거라 텍스트에는 짧게만 언급한다.
+        saveDescription += `\n\n안 읽은 링크가 ${unreadCount}개 있어요. 아래에서 바로 확인해보세요.`;
+      } else {
+        // 아직 썸네일이 없는(처리 전) 것들뿐이면 캐러셀 대신 텍스트 목록으로 대체한다.
+        const previewLines = preview
+          .map((link) => `· ${link.title || link.source_domain || link.raw_url}`)
+          .join("\n");
+        const remaining = unreadCount - preview.length;
+        saveDescription += `\n\n안 읽은 링크가 ${unreadCount}개 있어요.`;
+        if (previewLines) saveDescription += `\n${previewLines}`;
+        if (remaining > 0) saveDescription += `\n...외 ${remaining}개`;
       }
     }
 
-    return dashboardCardResponse({
-      title: urls.length === 1 ? "저장했어요!" : `링크 ${urls.length}개를 저장했어요!`,
-      description,
-      dashboardUrl,
-    });
+    const outputs = [
+      textCardOutput({ title: saveTitle, description: saveDescription, dashboardUrl }),
+    ];
+    if (carousel) outputs.push(carousel);
+
+    return buildResponse(outputs);
   } catch (error) {
     // 예상 못한 오류도 카카오 오픈빌더 규격(200 + simpleText)으로 응답해야
     // 스킬 서버가 실패로 처리하지 않고, 유저에게는 스택트레이스가 노출되지 않는다.
