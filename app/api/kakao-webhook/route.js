@@ -24,14 +24,15 @@ function buildResponse(outputs) {
   return NextResponse.json({ version: "2.0", template: { outputs } });
 }
 
-// 저장/연동 성공처럼 대시보드로 이어지는 응답은 텍스트만 던지지 않고
-// 버튼이 있는 카드(textCard)로 보여준다. 이 시점엔 아직 크롤링 전이라
-// 썸네일/제목이 없으므로 이미지가 필요 없는 textCard를 쓴다.
-function textCardOutput({ title, description, dashboardUrl }) {
+// 저장/연동 성공처럼 대시보드로 이어지는 응답은 카드로 보여준다. 방금 저장한
+// 링크의 실제 썸네일은 이 시점엔 크롤링 전이라 알 수 없고(5초 안에 응답해야
+// 하는데 크롤링은 느릴 수 있어 동기로 하면 위험), 대신 고정된 서비스 로고를 쓴다.
+function brandedCardOutput({ title, description, dashboardUrl, origin }) {
   return {
-    textCard: {
+    basicCard: {
       title,
       description,
+      thumbnail: { imageUrl: `${origin}/logo-card.png` },
       buttons: [
         { action: "webLink", label: "대시보드에서 보기", webLinkUrl: dashboardUrl },
       ],
@@ -226,7 +227,8 @@ export async function POST(request) {
 
     const supabase = createAdminClient();
     const trimmedUtterance = utterance.trim();
-    const dashboardUrl = `${new URL(request.url).origin}/dashboard`;
+    const origin = new URL(request.url).origin;
+    const dashboardUrl = `${origin}/dashboard`;
 
     // 대시보드 연동 코드(6자리 숫자) 입력 흐름: URL 저장 흐름보다 먼저 체크한다.
     if (LINK_CODE_REGEX.test(trimmedUtterance)) {
@@ -234,10 +236,11 @@ export async function POST(request) {
         const result = await redeemLinkCode(supabase, botUserKey, trimmedUtterance);
         if (result.success) {
           return buildResponse([
-            textCardOutput({
+            brandedCardOutput({
               title: "연동됐어요!",
               description: "로그인 전에 저장한 링크도 대시보드에서 확인할 수 있어요.",
               dashboardUrl,
+              origin,
             }),
           ]);
         }
@@ -311,7 +314,7 @@ export async function POST(request) {
     }
 
     const outputs = [
-      textCardOutput({ title: saveTitle, description: saveDescription, dashboardUrl }),
+      brandedCardOutput({ title: saveTitle, description: saveDescription, dashboardUrl, origin }),
     ];
     if (carousel) outputs.push(carousel);
 
