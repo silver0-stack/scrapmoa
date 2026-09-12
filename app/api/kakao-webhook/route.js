@@ -299,8 +299,14 @@ export async function POST(request) {
       carousel = unreadCarouselOutput(preview);
 
       if (carousel) {
-        // 캐러셀로 사진과 함께 보여줄 거라 텍스트에는 짧게만 언급한다.
-        saveDescription += `\n\n안 읽은 링크가 ${unreadCount}개 있어요. 아래에서 바로 확인해보세요.`;
+        // 캐러셀은 썸네일 있는 것만 골라서 보여주기 때문에 전체 안읽음 개수랑
+        // 다를 수 있다. "5개인데 카드가 4개"처럼 안 맞아 보이지 않게, 실제로
+        // 보여주는 개수를 정확히 말한다.
+        const shownCount = carousel.carousel.items.length;
+        saveDescription +=
+          shownCount < unreadCount
+            ? `\n\n안 읽은 링크가 ${unreadCount}개 있어요. 그중 최근 ${shownCount}개를 보여드려요.`
+            : `\n\n안 읽은 링크가 ${unreadCount}개 있어요. 아래에서 바로 확인해보세요.`;
       } else {
         // 아직 썸네일이 없는(처리 전) 것들뿐이면 캐러셀 대신 텍스트 목록으로 대체한다.
         const previewLines = preview

@@ -9,8 +9,11 @@ export const maxDuration = 60;
 // pending 레코드는 건드리지 않고 일정 시간 이상 방치된 것만 재처리 대상으로 삼는다.
 // quota_exceeded(분당 한도 초과로 확정된 것)도 하루 지나면 한도가 풀렸을 테니 같이 재시도한다.
 const STALE_MINUTES = 3;
-// 1회 실행(maxDuration 60s) 안에서 Gemini 호출 간격(4.5초)을 감안한 안전한 처리 개수.
-const BATCH_LIMIT = 10;
+// 1회 실행(maxDuration 60s) 안에서 안전한 처리 개수.
+// 429를 만나면 링크 하나당 재시도로만 최대 22초(2s+5s+15s)까지 쓸 수 있고,
+// 거기에 크롤링 시간+링크 사이 4.5초 딜레이까지 더해지면 개수를 넉넉히 잡았다가
+// 실제로 60초 타임아웃이 나는 걸 확인해서 보수적으로 줄임.
+const BATCH_LIMIT = 3;
 
 export async function GET(request) {
   const authHeader = request.headers.get("authorization");
