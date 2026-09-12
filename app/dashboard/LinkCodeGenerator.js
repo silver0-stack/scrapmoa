@@ -27,7 +27,7 @@ export default function LinkCodeGenerator() {
   };
 
   return (
-    <section className="mt-6 max-w-md rounded-lg border border-neutral-200 p-4">
+    <section className="mt-6 max-w-md rounded-lg border border-neutral-200 bg-white p-4">
       <h2 className="font-semibold text-neutral-900">카카오톡 챗봇 연동</h2>
       <p className="mt-1 text-sm text-neutral-500">
         아래에서 코드를 발급받아 카카오톡 챗봇방에 그대로 보내면, 로그인 전에

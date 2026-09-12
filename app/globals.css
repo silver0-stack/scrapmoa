@@ -3,6 +3,7 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  color-scheme: light;
 }
 
 @theme inline {
@@ -12,13 +13,9 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
+/* 카드/텍스트 색상을 전부 라이트 모드 기준으로 하드코딩해뒀는데(bg-white, text-neutral-900 등)
+   다크모드는 대응해두지 않아서, 시스템이 다크모드면 배경만 어두워지고 글씨가 묻혀 안 보였다.
+   제대로 된 다크 테마를 만들기 전까지는 라이트 모드로 고정한다. */
 body {
   background: var(--background);
   color: var(--foreground);
