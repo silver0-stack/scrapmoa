@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { waitUntil } from "@vercel/functions";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { processLinks } from "@/lib/linkProcessor";
+// processLinks는 정적 import 대신 아래에서 동적 import로 불러온다.
+// linkProcessor -> crawler가 jsdom/@mozilla/readability를 로드하는데, 이건
+// 무거운 라이브러리라 콜드 스타트 시 모듈 그래프 평가 자체가 수백ms~1초 이상
+// 걸릴 수 있다. 정적 import로 두면 요청 처리(5초 응답 제한)와 무관한 이
+// 로딩 비용이 매번 응답 전체를 지연시킨다. waitUntil 안에서 동적으로 불러오면
+// 로딩이 응답 이후 백그라운드로 밀려나 콜드 스타트가 5초 제한을 잠식하지 않는다.
 
 export const runtime = "nodejs"; // 크롤링(jsdom)이 Node API를 필요로 함
 export const maxDuration = 60; // waitUntil 백그라운드 작업(크롤링+Gemini)이 끝날 시간을 확보
@@ -285,7 +290,12 @@ export async function POST(request) {
 
     // fire-and-forget 금지: await 없이 던지면 서버리스 함수가 응답 직후 종료되어
     // 백그라운드 작업이 중간에 끊길 수 있다. 반드시 waitUntil로 감싼다.
-    waitUntil(processLinks(insertedLinks));
+    // processLinks는 동적 import로 가져온다 (파일 상단 주석 참고).
+    waitUntil(
+      import("@/lib/linkProcessor").then(({ processLinks }) =>
+        processLinks(insertedLinks)
+      )
+    );
 
     const saveTitle = urls.length === 1 ? "저장했어요!" : `링크 ${urls.length}개를 저장했어요!`;
     let saveDescription = "잠시 후 요약이 완성돼요.";
