@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import Footer from "../components/Footer";
 import LinkCodeGenerator from "./LinkCodeGenerator";
 import LinksExplorer from "./LinksExplorer";
 
@@ -59,6 +60,8 @@ export default async function DashboardPage({ searchParams }) {
       <LinkCodeGenerator />
 
       <LinksExplorer categories={categories} initialFilters={initialFilters} />
+
+      <Footer />
     </main>
   );
 }
