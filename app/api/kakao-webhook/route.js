@@ -291,16 +291,13 @@ export async function POST(request) {
     // fire-and-forget 금지: await 없이 던지면 서버리스 함수가 응답 직후 종료되어
     // 백그라운드 작업이 중간에 끊길 수 있다. 반드시 waitUntil로 감싼다.
     // processLinks는 동적 import로 가져온다 (파일 상단 주석 참고).
-    // 방금 들어온 링크뿐 아니라, 묵은 pending/quota_exceeded 백로그 1건도 같이
-    // 재시도한다 (하루 1회 도는 cron만으로는 트래픽 몰릴 때 백로그가 너무 느리게 풀림).
+    // 묵은 pending/quota_exceeded 백로그를 웹훅에 얹어 같이 처리하는 것도 시도했지만,
+    // Gemini 무료 티어가 실제로는 분당 5회 한도라(2026-09-29 확인) 새 링크 하나 처리도
+    // 빠듯해서, 백로그는 하루 1회 크론(app/api/cron/process-links)에만 맡긴다.
+    // maxDuration(60s) 안에서 안전 마진을 두고 데드라인을 넘긴다 (lib/linkProcessor.js 참고).
     waitUntil(
-      import("@/lib/linkProcessor").then(
-        async ({ processLinks, fetchRetryBacklog }) => {
-          const backlog = await fetchRetryBacklog(supabase, {
-            excludeIds: insertedLinks.map((link) => link.id),
-          });
-          return processLinks([...insertedLinks, ...backlog]);
-        }
+      import("@/lib/linkProcessor").then(({ processLinks }) =>
+        processLinks(insertedLinks, { deadline: Date.now() + 50000 })
       )
     );
 
