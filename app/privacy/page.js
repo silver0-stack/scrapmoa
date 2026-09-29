@@ -28,7 +28,7 @@ export default function PrivacyPage() {
           </li>
           <li>
             <strong>서비스 이용 중 생성되는 정보</strong>: 이용자가 저장한 링크 URL,
-            그리고 AI가 자동으로 생성한 제목·3줄 요약·카테고리·태그.
+            그리고 AI가 자동으로 생성한 제목·한 줄 요약·카테고리·태그.
           </li>
         </ul>
       </section>
